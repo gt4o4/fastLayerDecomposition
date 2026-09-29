@@ -83,3 +83,10 @@ a {
 
     color: #0080ff;
 }
+
+/* Progress messages next to buttons. Never wrap, so they don't change the layout. */
+.status
+{
+    white-space: nowrap;
+    color: #ffcc66;
+}

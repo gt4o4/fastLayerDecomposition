@@ -15,7 +15,8 @@ class WorkerClient {
         this._error = null;
         this._receiveDataQueue = [];
         this._receiveCallbacksQueue = [];
-        // Called with progress text from the worker ('' when idle).
+        // Called with ( text, topic ): progress text from the worker ('' when done)
+        // and the protocol message it's about (e.g., 'palette'), or 'startup'.
         this.onstatus = null;
     }
 
@@ -52,10 +53,10 @@ class WorkerClient {
                 }
             }
             else if( msg.type === 'status' ) {
-                if( this.onstatus ) this.onstatus( msg.text );
+                if( this.onstatus ) this.onstatus( msg.text, msg.topic );
             }
             else if( msg.type === 'error' ) {
-                if( this.onstatus ) this.onstatus( "Error: " + msg.text );
+                if( this.onstatus ) this.onstatus( "Error: " + msg.text, msg.topic );
                 // The request that failed won't get a response.
                 if( this._receiveCallbacksQueue.length !== 0 ) {
                     this._receiveCallbacksQueue.shift().reject( new Error( msg.text ) );
@@ -64,7 +65,7 @@ class WorkerClient {
         };
         this._worker.onerror = event => {
             this._error = new Error( event.message );
-            if( this.onstatus ) this.onstatus( "Error: " + event.message );
+            if( this.onstatus ) this.onstatus( "Error: " + event.message, 'startup' );
             while( this._receiveCallbacksQueue.length !== 0 ) {
                 this._receiveCallbacksQueue.shift().reject( this._error );
             }

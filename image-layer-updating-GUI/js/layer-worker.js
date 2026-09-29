@@ -5,8 +5,9 @@ WorkerClient (worker-client.js) is a drop-in replacement for WebSocketClient.
 
 Messages posted back to the page are objects:
     { type: 'data', data }: a response, analogous to a WebSocket message.
-    { type: 'status', text }: progress text to show the user ('' when idle).
-    { type: 'error', text }: an error. A pending receive() rejects.
+    { type: 'status', topic, text }: progress text to show the user ('' when done).
+    { type: 'error', topic, text }: an error. A pending receive() rejects.
+`topic` is the protocol message being handled (e.g., 'palette'), or 'startup'.
 */
 
 // This is a module worker, since Pyodide doesn't support classic workers.
@@ -41,10 +42,13 @@ function receive() {
     return new Promise( resolve => { waiting = resolve; } );
 }
 function send( data ) { self.postMessage({ type: 'data', data: data }); }
-function status( text ) { self.postMessage({ type: 'status', text: text }); }
+// The protocol message currently being handled.
+let topic = 'startup';
+function status( text ) { self.postMessage({ type: 'status', topic: topic, text: text }); }
+function error( text ) { self.postMessage({ type: 'error', topic: topic, text: text }); }
 
 async function loadEngine() {
-    status( "Loading Python (first time only takes a while)..." );
+    status( "Loading Python (slow the first time)..." );
     const pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
     await pyodide.loadPackage( [ "numpy", "scipy" ] );
 
@@ -64,9 +68,9 @@ async function main() {
     let pyodide, engine;
     try {
         ({ pyodide, engine } = await loadEngine());
-    } catch( error ) {
-        console.error( error );
-        self.postMessage({ type: 'error', text: "Could not load the layer decomposition code: " + error.message });
+    } catch( e ) {
+        console.error( e );
+        error( "Could not load the layer decomposition code: " + e.message );
         return;
     }
     status( "" );
@@ -74,6 +78,7 @@ async function main() {
     for( ;; ) {
         const msg = await receive();
         console.log( "worker:", msg );
+        topic = msg;
         try {
             if( msg === "load-image" ) {
                 const width_and_height = await receive();
@@ -111,11 +116,11 @@ async function main() {
             else {
                 console.error( "Unknown message:", msg );
             }
-        } catch( error ) {
-            console.error( error );
-            self.postMessage({ type: 'error', text: error.message });
+            status( "" );
+        } catch( e ) {
+            console.error( e );
+            error( e.message );
         }
-        status( "" );
     }
 }
 

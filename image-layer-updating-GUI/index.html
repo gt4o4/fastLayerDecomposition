@@ -27,18 +27,17 @@
             
             <div style="clear: both;"></div>
             <div id="debug"></div>
-            <div id="compute_status"></div>
             <input id="upload" type="file">
             <div>
-                <p><button id="precompute">Pre-compute RGBXY weights</button>
+                <p><button id="precompute">Pre-compute RGBXY weights</button> <span class="status" id="precompute_status"></span>
                 
-                <p><button id="autoCompute">Create automatic palette</button>
+                <p><button id="autoCompute">Create automatic palette</button> <span class="status" id="autoCompute_status"></span>
                 <br>
                 <input type="checkbox" id="userChoose" name="userChoose" value="userChoose">
                 <label for="userChoose">Prescribed number of layers:</label>
                 <input type="number" id="layerNum" name="layerNum" value="6">
                 
-                <p><button id="addOneColor" onclick="addOneColor()" disabled>Add Random Palette Color</button>
+                <p><button id="addOneColor" onclick="addOneColor()" disabled>Add Random Palette Color</button> <span class="status" id="addOneColor_status"></span>
 
             </div>
 
@@ -54,7 +53,7 @@
             <div id="saveCamera"><a href="#" onclick="saveCamera()">Save Camera Only</a></div>
         </div>
         <div id="layers">
-            <div>Layers:</div>
+            <div>Layers: <span class="status" id="layers_status"></span></div>
             
             <div id="layer_holder"></div>
             
@@ -1849,6 +1848,27 @@
                 // stats.update();
             }
             
+            /*
+            Shows progress `text` next to the button for the protocol message `topic`
+            (e.g., "palette" or "load-image"). Pass '' to clear it.
+            */
+            function setStatus( text, topic ) {
+                const status_ids = {
+                    'startup': 'precompute_status',
+                    'load-image': 'precompute_status',
+                    'automatically-compute-palette': 'autoCompute_status',
+                    'user-choose-number-compute-palette': 'autoCompute_status',
+                    'random-add-one-more-color': 'addOneColor_status',
+                    'palette': 'layers_status'
+                };
+                const id = status_ids[ topic ];
+                if( id === undefined ) {
+                    console.error( "setStatus() with unknown topic:", topic, text );
+                    return;
+                }
+                document.getElementById( id ).textContent = text;
+            }
+            
             async function initWebSocket() {
                 // Socket from URL in modern JavaScript: https://stackoverflow.com/questions/979975/how-to-get-the-value-from-the-get-parameters
                 var url = new URL( window.location.href );
@@ -1858,9 +1878,7 @@
                 // Both speak the same protocol and have the same send()/receive() interface.
                 if( !url.searchParams.has("server") && !url.searchParams.has("port") ) {
                     socket = new WorkerClient;
-                    socket.onstatus = function( text ) {
-                        document.getElementById('compute_status').textContent = text;
-                    };
+                    socket.onstatus = setStatus;
                     await socket.connect( 'js/layer-worker.js' );
                     console.log( "Computing in the browser." );
                     return;
@@ -1919,6 +1937,7 @@
                 }
                 updateLayersInProgress = true;
                 console.log( "websocket: palette" );
+                setStatus( 'Computing layers...', 'palette' );
                 socket.send( "palette" );
                 console.log("debug");
                 console.log(palette)
@@ -1963,16 +1982,17 @@
 
                 // TODO: Update loadWeights() to put tinted images in #layer_holder.
                 loadWeights( layers );
+                setStatus( '', 'palette' );
                 updateLayersInProgress = false;
             }
             
             async function automaticallyComputePalette() {
                 console.log( "websocket: automatically-compute-palette" );
                 socket.send( "automatically-compute-palette" );
-                document.getElementById('debug').innerHTML = 'Waiting for automatic palette...';
+                setStatus( 'Waiting for automatic palette...', 'automatically-compute-palette' );
                 var temp = await socket.receive();
                 var hull=JSON.parse(temp);
-                document.getElementById('debug').innerHTML = '';
+                setStatus( '', 'automatically-compute-palette' );
                 loadOverlayMesh(hull, "automatic computed palette");
                 
                 // Disable precompute button.
@@ -1985,10 +2005,10 @@
                 console.log( "websocket: user-choose-number-compute-palette");
                 socket.send( "user-choose-number-compute-palette" );
                 socket.send( String(M) );
-                document.getElementById('debug').innerHTML = 'Waiting for user choose number computed palette...';
+                setStatus( 'Waiting for palette...', 'user-choose-number-compute-palette' );
                 var temp = await socket.receive();
                 var hull=JSON.parse(temp);
-                document.getElementById('debug').innerHTML = '';
+                setStatus( '', 'user-choose-number-compute-palette' );
                 loadOverlayMesh(hull, "user choose number computed palette");
                 
                 // Disable precompute button.
@@ -2002,7 +2022,7 @@
                 socket.send( JSON.stringify( palette ) );
                 var temp = await socket.receive();
                 var hull=JSON.parse(temp);
-                document.getElementById('debug').innerHTML = '';
+                setStatus( '', 'random-add-one-more-color' );
                 loadOverlayMesh(hull, "user choose number computed palette");
             }
 
