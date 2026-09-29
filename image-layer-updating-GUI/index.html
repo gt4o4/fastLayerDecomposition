@@ -27,6 +27,7 @@
             
             <div style="clear: both;"></div>
             <div id="debug"></div>
+            <div id="compute_status"></div>
             <input id="upload" type="file">
             <div>
                 <p><button id="precompute">Pre-compute RGBXY weights</button>
@@ -74,6 +75,7 @@
         <script src="js/canvas-toBlob.js"></script>
         
         <script src="js/websocket-client.js"></script>
+        <script src="js/worker-client.js"></script>
         <!--
             // This appears not to support multiple calls to saveAs()
             // without an async callback of some sort.
@@ -1848,13 +1850,26 @@
             }
             
             async function initWebSocket() {
-                // Example code sending images: https://gist.github.com/hagino3000/1447986
-                // Let's use WebSocketClient library, which supports await: https://github.com/jcao219/websocket-async
-                // TODO: Write a websockets server. Use: http://websockets.readthedocs.io/en/stable/intro.html
-                socket = new WebSocketClient;
-                
                 // Socket from URL in modern JavaScript: https://stackoverflow.com/questions/979975/how-to-get-the-value-from-the-get-parameters
                 var url = new URL( window.location.href );
+                
+                // By default, compute in the browser with a Web Worker running Pyodide.
+                // Pass `?server` or `?port=9988` to use the Python WebSocket server (server.py) instead.
+                // Both speak the same protocol and have the same send()/receive() interface.
+                if( !url.searchParams.has("server") && !url.searchParams.has("port") ) {
+                    socket = new WorkerClient;
+                    socket.onstatus = function( text ) {
+                        document.getElementById('compute_status').textContent = text;
+                    };
+                    await socket.connect( 'js/layer-worker.js' );
+                    console.log( "Computing in the browser." );
+                    return;
+                }
+                
+                // Example code sending images: https://gist.github.com/hagino3000/1447986
+                // Let's use WebSocketClient library, which supports await: https://github.com/jcao219/websocket-async
+                socket = new WebSocketClient;
+                
                 var port = 9988;
                 if( url.searchParams.has("port") ) {
                     port = parseInt( url.searchParams.get("port") );

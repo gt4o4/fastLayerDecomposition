@@ -6,8 +6,15 @@ A different and simpler prototype implementation can be found in [this link](htt
 
 ## Running the GUI
 
-The GUI runs in the browser at: <http://localhost:8000/>
-For that to work, you need to run a server. See "Running the Server" below.
+The GUI runs entirely in the browser. The Python code runs in a Web Worker via [Pyodide](https://pyodide.org/), so there is nothing to install.
+It only needs to be served over HTTP from the root of this repository (the worker loads the Python files). For example:
+
+    python3 -m http.server
+
+and then open <http://localhost:8000/>. (Any static web host, such as GitHub Pages, works too.)
+The first visit downloads Python, NumPy, and SciPy (a few tens of megabytes); your browser caches them after that.
+
+Alternatively, the GUI can use the Python WebSocket server (for example, to use OpenCL). See "Running the Server" below.
 
 Load or drag-and-drop an image. Then compute the palette and weights. You can manipulate the palette colors in the 3D RGB-space view. You can save the palette and weights for recoloring by clicking the "Save Everything" button.
 
@@ -29,12 +36,16 @@ This image recoloring web GUI is also used in our previous project, [Decomposing
 
 ## Running the Server
 
+The server is optional. The GUI uses it instead of computing in the browser when you open it with a `server` or `port` parameter: <http://localhost:8000/image-layer-updating-GUI/?server> (default port 9988) or <http://localhost:8000/image-layer-updating-GUI/?port=9988>.
+
 ### With Docker
 
 You can run the server via Docker (no need to install any dependencies on your machine). You won't get an OpenCL implementation of the layer updating, but it is still quite fast.
 
     docker pull cragl/fastlayers
     docker run -p 8000:8000 -p 9988:9988 cragl/fastlayers
+
+Then open <http://localhost:8000/image-layer-updating-GUI/?server>.
 
 ### Without Docker
 
@@ -55,7 +66,7 @@ To update an already created environment if the `environment.yml` file changes, 
 
 ##### Pip
 
-Note: One of our dependencies, `cvxopt`, is broken on Apple Silicon with `pip`. Use the `conda` instructions above.
+Note: One of our dependencies, `cvxopt`, is broken on Apple Silicon with `pip`. Use the `conda` instructions above, or skip `cvxopt`; it is optional (without it, SciPy's HiGHS linear programming solver is used).
 
 Install Python 3.6+.
 
@@ -76,16 +87,11 @@ Install dependencies:
 * Python
 * NumPy
 * SciPy
-* Cython
-* [GLPK](https://www.gnu.org/software/glpk/) (`brew install glpk`)
-* cvxopt, built with the [GLPK](https://www.gnu.org/software/glpk/) linear programming solver interface (`CVXOPT_BUILD_GLPK=1 pip install cvxopt`)
+* (optional) [GLPK](https://www.gnu.org/software/glpk/) (`brew install glpk`)
+* (optional) cvxopt, built with the [GLPK](https://www.gnu.org/software/glpk/) linear programming solver interface (`CVXOPT_BUILD_GLPK=1 pip install cvxopt`)
 * PIL or Pillow (Python Image Library) (`pip install Pillow`)
-* pyopencl
+* (optional) pyopencl
 * websockets (`pip install websockets`)
-
-#### Compile the one Cython file
-
-    cythonize -i GteDistPointTriangle.pyx
 
 #### Running the server
 
@@ -94,6 +100,8 @@ Run the server:
     cd image-layer-updating-GUI
     ./runboth.sh
 
+Then open <http://localhost:8000/image-layer-updating-GUI/?server>.
+
 If you are on Windows (untested), the `runboth.sh` script probably won't work. Instead, run the two Python server commands manually in two separate command lines:
 
     cd image-layer-updating-GUI
@@ -101,7 +109,6 @@ If you are on Windows (untested), the `runboth.sh` script probably won't work. I
 
 and
 
-    cd image-layer-updating-GUI
     python3 -m http.server
 
 

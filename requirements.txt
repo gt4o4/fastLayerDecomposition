@@ -1,6 +1,5 @@
 numpy
 scipy
-Cython
 cvxopt
 Pillow
 pyopencl

@@ -8,7 +8,6 @@ dependencies:
   - scipy
   - pillow
   - cvxopt
-  - cython
   - websockets
   - pip
   - git

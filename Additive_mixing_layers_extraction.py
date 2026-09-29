@@ -5,7 +5,9 @@ import time
 import warnings
 import json
 import time
-import PIL.Image as Image
+## PIL is only needed to save images. It's optional so that this also runs in the browser (Pyodide).
+try: import PIL.Image as Image
+except ImportError: Image = None
 from Convexhull_simplification import *
 import scipy.sparse
 import scipy.optimize
@@ -13,10 +15,7 @@ import scipy
 from trimesh import *
 
 
-
-import pyximport
-pyximport.install(reload_support=True)
-from GteDistPointTriangle import *
+from point_triangle_distance import closest_points_on_triangles
 
 
 global DEMO
@@ -58,11 +57,12 @@ def Hull_Simplification_unspecified_M(data, output_prefix, start_save=10):
     write_convexhull_into_obj_file(hull, output_rawhull_obj_file)    
     
     max_loop=5000
+    lp_cache={}
     for i in range(max_loop):
         mesh=TriMesh.FromOBJ_FileName(output_rawhull_obj_file)
         old_num=len(mesh.vs)
         old_vertices=mesh.vs
-        mesh=remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,option=2)
+        mesh=remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,option=2,lp_cache=lp_cache)
 #         newhull=ConvexHull(mesh.vs, qhull_options="Qs")
         hull=ConvexHull(mesh.vs)
         write_convexhull_into_obj_file(hull, output_rawhull_obj_file)
@@ -85,10 +85,11 @@ def Hull_Simplification_old(arr, M, output_prefix):
     
 
     max_loop=5000
+    lp_cache={}
     for i in range(max_loop):
         old_num=len(mesh.vs)
         mesh=TriMesh.FromOBJ_FileName(output_rawhull_obj_file)
-        mesh=remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,option=2)
+        mesh=remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,option=2,lp_cache=lp_cache)
         newhull=ConvexHull(mesh.vs)
         write_convexhull_into_obj_file(newhull, output_rawhull_obj_file)
         
@@ -138,16 +139,8 @@ def outsidehull_points_distance(hull_vertices, points):
     hull=ConvexHull(hull_vertices)
     de=Delaunay(hull_vertices)
     ind=de.find_simplex(points, tol=1e-8)
-    total_distance=[]
-    for i in range(points.shape[0]):
-        if ind[i]<0:
-            dist_list=[]
-            for j in range(hull.simplices.shape[0]):
-                result = DCPPointTriangle( points[i], hull.points[hull.simplices[j]] )
-                dist_list.append(result['distance'])
-            total_distance.append(min(dist_list))
-    total_distance=np.asarray(total_distance)
-    
+    total_distance, _ = closest_points_on_triangles( points[ind<0], hull.points[hull.simplices] )
+
     return ((total_distance**2).sum()/len(points))**0.5
 
 
@@ -163,16 +156,8 @@ def outsidehull_points_distance_for_using_origin_hull_vertices(hull_vertices, al
     ind=de.find_simplex(points, tol=1e-8)
     length=len(ind[ind<0])
 
-    total_distance=[]
-    for i in range(points.shape[0]):
-        if ind[i]<0:
-            dist_list=[]
-            for j in range(hull.simplices.shape[0]):
-                result = DCPPointTriangle( points[i], hull.points[hull.simplices[j]] )
-                dist_list.append(result['distance'])
-            total_distance.append(min(dist_list))
-    total_distance=np.asarray(total_distance)
-    
+    total_distance, _ = closest_points_on_triangles( points[ind<0], hull.points[hull.simplices] )
+
     pixel_numbers=len(all_points)
     
     # return ((total_distance**2).sum()/pixel_numbers)**0.5
@@ -188,16 +173,8 @@ def outsidehull_points_distance_unique_data_version(hull_vertices, points, count
     hull=ConvexHull(hull_vertices)
     de=Delaunay(hull_vertices)
     ind=de.find_simplex(points, tol=1e-8)
-    total_distance=[]
-    for i in range(points.shape[0]):
-        if ind[i]<0:
-            dist_list=[]
-            for j in range(hull.simplices.shape[0]):
-                result = DCPPointTriangle( points[i], hull.points[hull.simplices[j]] )
-                dist_list.append(result['distance'])
-            total_distance.append(min(dist_list))
-    total_distance=np.asarray(total_distance)
-    
+    total_distance, _ = closest_points_on_triangles( points[ind<0], hull.points[hull.simplices] )
+
     return (((total_distance**2)*counts[ind<0]).sum()/counts.sum())**0.5
 
 
@@ -262,6 +239,7 @@ def Hull_Simplification_determined_version(data, output_prefix, num_thres=0.1, e
         
 
     max_loop=5000
+    lp_cache={}
     for i in range(max_loop):
         if i%10==0:
             print ("loop: ", i)
@@ -269,7 +247,7 @@ def Hull_Simplification_determined_version(data, output_prefix, num_thres=0.1, e
         old_num=len(mesh.vs)
         old_vertices=mesh.vs
         # print ("WHY1")
-        mesh=remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,option=2)
+        mesh=remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,option=2,lp_cache=lp_cache)
 #         newhull=ConvexHull(mesh.vs, qhull_options="Qs")
         hull=ConvexHull(mesh.vs)
         write_convexhull_into_obj_file(hull, output_rawhull_obj_file)
@@ -423,18 +401,7 @@ def Get_ASAP_weights_using_Tan_2016_triangulation_and_then_barycentric_coordinat
     # print len(label[label==-1])
 
     ### modify img_label[] to make all points are inside the simplified convexhull
-    for i in range(img_label.shape[0]):
-    #     print i
-        if label[i]<0:
-            dist_list=[]
-            cloest_points=[]
-            for j in range(hull.simplices.shape[0]):
-                result = DCPPointTriangle( img_label[i], hull.points[hull.simplices[j]] )
-                dist_list.append(result['distance'])
-                cloest_points.append(result['closest'])
-            dist_list=np.asarray(dist_list)
-            index=np.argmin(dist_list)
-            img_label[i]=cloest_points[index]
+    _, img_label[label<0] = closest_points_on_triangles( img_label[label<0], hull.points[hull.simplices] )
 
     ### assert
     test_inside=Delaunay(tetra_prime)

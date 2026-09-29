@@ -8,8 +8,12 @@ from scipy.spatial import ConvexHull
 from scipy.spatial import Delaunay
 from scipy.optimize import *
 from math import *
-import cvxopt   
-import PIL.Image as Image  
+## cvxopt (with GLPK) and PIL are optional so that this also runs in the browser (Pyodide).
+## Without cvxopt, we fall back to scipy's HiGHS linear programming solver.
+try: import cvxopt
+except ImportError: cvxopt = None
+try: import PIL.Image as Image
+except ImportError: Image = None
 import sys    
 
 ######***********************************************************************************************
@@ -142,17 +146,42 @@ def compute_tetrahedron_volume(face, point):
 
 
 
+def solve_lp( c, A, b ):
+    '''
+    Minimize c*x w.r.t. A*x<=b with x unbounded.
+    Returns the optimal x, or None if the problem has no optimal solution.
+    '''
+    if cvxopt is not None:
+        cvxopt.solvers.options['show_progress'] = False
+        cvxopt.solvers.options['glpk'] = dict(msg_lev='GLP_MSG_OFF')
+        res = cvxopt.solvers.lp( cvxopt.matrix(c), cvxopt.matrix(A), cvxopt.matrix(b), solver='glpk' )
+        if res['status']=='optimal':
+            return np.asarray( res['x'], dtype=float ).squeeze()
+        return None
+    else:
+        import scipy.optimize
+        res = scipy.optimize.linprog( c, A_ub=A, b_ub=b, bounds=(None,None), method='highs' )
+        if res.status==0:
+            return res.x
+        return None
+
+
 #### this is different from function: remove_one_edge_by_finding_smallest_adding_volume(mesh)
 #### add some test conditions to accept new vertex.
 #### if option ==1, return a new convexhull.
 #### if option ==2, return a new mesh (using trimesh.py)
-def remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh, option):
+#### lp_cache is an optional dictionary that caches linear programming solutions across calls.
+#### Pass the same dictionary when calling this repeatedly on a simplifying mesh;
+#### most edges' neighborhoods are unchanged from one call to the next.
+def remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh, option, lp_cache=None):
  
     edges=mesh.get_edges()
     mesh.get_halfedges()
     faces=mesh.faces
     vertices=mesh.vs
 #     print (len(vertices))
+    vertex_positions=np.asarray(vertices, dtype=float)
+    face_array=np.asarray(faces, dtype=int)
     
     temp_list1=[]
     temp_list2=[]
@@ -167,45 +196,41 @@ def remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,
         face_index2=mesh.vertex_face_neighbors(vertex2)
 
         face_index=list(set(face_index1) | set(face_index2))
-        related_faces=[faces[index] for index in face_index]
-        old_face_list=[]
+        ## The related faces' vertex positions, as a len(face_index)-by-3-by-3 array.
+        old_faces=vertex_positions[ face_array[ face_index ] ]
         
         
         #### now find a point, so that for each face in related_faces will create a positive volume tetrahedron using this point.
         ### minimize c*x. w.r.t. A*x<=b
-        c=np.zeros(3)
-        A=[]
-        b=[]
-
-        for index in range(len(related_faces)):
-            face=related_faces[index]
-            p0=vertices[face[0]]
-            p1=vertices[face[1]]
-            p2=vertices[face[2]]
-            old_face_list.append(np.asarray([p0,p1,p2]))
-            
-            n=np.cross(p1-p0,p2-p0)
-            
-            #### Currently use this line. without this line, test_fourcolors results are not good.
-            n=n/np.sqrt(np.dot(n,n)) ##### use normalized face normals means distance, not volume
-            
-            A.append(n)
-            b.append(np.dot(n,p0))
-            c+=n
-                
+        ## Vectorized over faces, since this loop is the bottleneck (particularly in the browser).
+        p0=old_faces[:,0]
+        unnormalized_n=np.cross(old_faces[:,1]-p0, old_faces[:,2]-p0)
+        
+        #### Currently use this line. without this line, test_fourcolors results are not good.
+        n=unnormalized_n/np.sqrt((unnormalized_n**2).sum(axis=1))[:,None] ##### use normalized face normals means distance, not volume
+        
+        A=n
+        b=(n*p0).sum(axis=1)
+        c=n.sum(axis=0)
 
 ########### now use cvxopt.solvers.lp solver
             
-        A=-np.asfarray(A)
-        b=-np.asfarray(b)
+        A=-A
+        b=-b
         
-        c=np.asfarray(c)
-        cvxopt.solvers.options['show_progress'] = False
-        cvxopt.solvers.options['glpk'] = dict(msg_lev='GLP_MSG_OFF')
-        res = cvxopt.solvers.lp( cvxopt.matrix(c), cvxopt.matrix(A), cvxopt.matrix(b), solver='glpk' )
+        if lp_cache is None:
+            newpoint = solve_lp( c, A, b )
+        else:
+            ## Sort the constraints so that the same neighborhood always produces the same key.
+            order = np.lexsort( np.column_stack( ( A, b ) ).T )
+            A = A[order]
+            b = b[order]
+            key = A.tobytes() + b.tobytes()
+            if key not in lp_cache:
+                lp_cache[key] = solve_lp( c, A, b )
+            newpoint = lp_cache[key]
 
-        if res['status']=='optimal':
-            newpoint = np.asfarray( res['x'] ).squeeze()
+        if newpoint is not None:
         
 
             ######## using objective function to calculate (volume) or (distance to face) as priority.
@@ -213,10 +238,8 @@ def remove_one_edge_by_finding_smallest_adding_volume_with_test_conditions(mesh,
             
     
             ####### manually compute volume as priority,so no relation with objective function
-            tetra_volume_list=[]
-            for each_face in old_face_list:
-                tetra_volume_list.append(compute_tetrahedron_volume(each_face,newpoint))
-            volume=np.asarray(tetra_volume_list).sum()
+            ## This is compute_tetrahedron_volume() summed over old_faces.
+            volume=np.abs((unnormalized_n*(newpoint-p0)).sum(axis=1)).sum()/6.0
             
 
 
@@ -344,7 +367,7 @@ if __name__=="__main__":
     import time 
     start_time=time.clock()
 
-    images=np.asfarray(Image.open(input_image_path).convert('RGB')).reshape((-1,3))
+    images=np.asarray(Image.open(input_image_path).convert('RGB'), dtype=float).reshape((-1,3))
     hull=ConvexHull(images)
     origin_hull=hull
     # visualize_hull(hull)

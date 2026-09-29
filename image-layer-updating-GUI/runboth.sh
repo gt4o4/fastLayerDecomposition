@@ -7,4 +7,5 @@
 trap 'kill $BGPID; exit' INT
 python3 server.py &
 BGPID=$!
-python3 -m http.server
+## Serve the whole repository, since the in-browser (Pyodide) computation loads the Python files.
+python3 -m http.server --directory ..
