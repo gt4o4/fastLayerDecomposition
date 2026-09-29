@@ -11,8 +11,9 @@ Messages posted back to the page are objects:
 */
 
 // This is a module worker, since Pyodide doesn't support classic workers.
-import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs";
-const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
+// Pyodide and the packages we need are vendored in js/pyodide/ (see its README.md).
+import { loadPyodide } from "./pyodide/pyodide.mjs";
+const PYODIDE_URL = new URL( "pyodide/", self.location ).href;
 
 // The Python modules layer_engine.py needs, relative to the repository root.
 const PYTHON_FILES = [
