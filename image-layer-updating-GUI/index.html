@@ -49,7 +49,7 @@
             <div class="widget"><label>Rotation has intertia:<input type="checkbox" id="intertia" /></label></div>
             <!-- <div class="widget"><button id="look_from_white">Look from white</button></div> -->
             <div><a href="#" id="look_from_white">Look from white</a></div>
-            <div id="saveAll"><a href="#" onclick="saveAll()">Save Everything</a></div>
+            <div id="saveAll"><a href="#" onclick="saveAll(); return false;">Save Everything</a> <span class="status" id="saveAll_status"></span></div>
             <div id="saveCamera"><a href="#" onclick="saveCamera()">Save Camera Only</a></div>
         </div>
         <div id="layers">
@@ -68,6 +68,7 @@
         <script src="js/controls/TrackballControls.js"></script>
         <script src="js/Detector.js"></script>
         <script src="js/libs/stats.min.js"></script>
+        <script src="js/libs/jszip.min.js"></script>
         <script src="js/purl.js"></script>
         
         <script src="js/Blob.js"></script>
@@ -347,7 +348,11 @@
                 */
                 
                 var kMIMEType = "image/png";
-                var blob = canvas.toBlobHD( callback, kMIMEType );
+                var done = new Promise( function( resolve ) {
+                    canvas.toBlobHD( function( blob ) { callback( blob ); resolve(); }, kMIMEType );
+                });
+                // Let saveAll() wait for this.
+                if( saveAllPending !== null ) saveAllPending.push( done );
             }
             function canvasFromImage( img ) {
                 
@@ -424,8 +429,19 @@
                         );
                 }
             }
-            // From Gist: https://gist.github.com/yig/aeeb1ee67a13bea98f3d
+            // While saveAll() runs, saveAs() collects files here instead of downloading them,
+            // and asynchronous saves add promises to saveAllPending.
+            var saveAllFiles = null;
+            var saveAllPending = null;
             function saveAs( blob, name ) {
+                if( saveAllFiles !== null ) {
+                    saveAllFiles.push( { name: name, blob: blob } );
+                    return;
+                }
+                downloadBlob( blob, name );
+            }
+            // From Gist: https://gist.github.com/yig/aeeb1ee67a13bea98f3d
+            function downloadBlob( blob, name ) {
                 "use strict";
                 
                 // Inspired by Syntax: http://stackoverflow.com/questions/23451726/saving-binary-data-as-file-using-javascript-from-a-browser/23451803#23451803
@@ -443,20 +459,57 @@
                 a.href = url;
                 a.download = name;
                 a.click();
-                window.URL.revokeObjectURL(url);
+                // Revoking immediately can cancel large downloads in some browsers.
+                setTimeout( function() { window.URL.revokeObjectURL(url); }, 60000 );
                 a.parentNode.removeChild(a);
             }
-            function saveAll() {
+            /*
+            Saves everything as a single zip file. Browsers block or throttle
+            many separate downloads from one click.
+            */
+            async function saveAll() {
                 // Save:
+                // 0. the original image
                 // 1. a screenshot of the 3D view
                 // 2. the camera
                 // 3. the overlay mesh
                 // 4. the recolored image
+                // 5. the weights
+                // 6. the layers
                 
                 // The name of the loaded image.
                 var basename = basenameForSave();
                 
+                if( saveAllFiles !== null ) return;
+                setStatus( 'Saving...', 'save' );
+                var files = saveAllFiles = [];
+                saveAllPending = [];
+                try {
+                    // 0.
+                    saveAllPending.push(
+                        fetch( img.src ).then( function( response ) { return response.blob(); } )
+                            .then( function( blob ) { files.push( { name: basename, blob: blob } ); } )
+                        );
+                    
+                    saveAllParts( basename );
+                    
+                    await Promise.all( saveAllPending );
+                } catch( error ) {
+                    console.error( error );
+                    setStatus( 'Error saving: ' + error.message, 'save' );
+                    return;
+                } finally {
+                    saveAllFiles = null;
+                    saveAllPending = null;
+                }
                 
+                var zip = new JSZip();
+                files.forEach( function( file ) { zip.file( file.name, file.blob ); } );
+                var blob = await zip.generateAsync( { type: 'blob', compression: 'DEFLATE' } );
+                downloadBlob( blob, basename + "-everything.zip" );
+                setStatus( '', 'save' );
+            }
+            function saveAllParts( basename ) {
                 // 1.
                 saveScreenshot( basename );
                 
@@ -1859,7 +1912,8 @@
                     'automatically-compute-palette': 'autoCompute_status',
                     'user-choose-number-compute-palette': 'autoCompute_status',
                     'random-add-one-more-color': 'addOneColor_status',
-                    'palette': 'layers_status'
+                    'palette': 'layers_status',
+                    'save': 'saveAll_status'
                 };
                 const id = status_ids[ topic ];
                 if( id === undefined ) {

@@ -16,7 +16,7 @@ The first visit downloads Python, NumPy, and SciPy (a few tens of megabytes); yo
 
 Alternatively, the GUI can use the Python WebSocket server (for example, to use OpenCL). See "Running the Server" below.
 
-Load or drag-and-drop an image. Then compute the palette and weights. You can manipulate the palette colors in the 3D RGB-space view. You can save the palette and weights for recoloring by clicking the "Save Everything" button.
+Load or drag-and-drop an image. Then compute the palette and weights. You can manipulate the palette colors in the 3D RGB-space view. You can save the palette and weights for recoloring by clicking the "Save Everything" button, which downloads a zip file containing them, the original image, the layers, and more.
 
 Some videos of GUI usage can be found in [this link](https://cragl.cs.gmu.edu/fastlayers/)
 
@@ -26,7 +26,7 @@ The `turquoise.png` image is copyright [Michelle Lee](https://cargocollective.co
 
 You can perform global recoloring with the resulting layers with a different web GUI (no installation necessary).
 
-1. Go to <https://yig.github.io/image-rgb-in-3D/>
+1. Unzip `<image name>-everything.zip` from "Save Everything". Go to <https://yig.github.io/image-rgb-in-3D/>
 2. Drag and drop the original image: `<image name>`
 3. Drag and drop the palette: `<image name>-automatic computed palette-modified.js`
 4. Drag and drop the weights: `<image name>-weights.js`
